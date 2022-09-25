@@ -6,11 +6,28 @@ public class InputController : MonoBehaviour
     [SerializeField] private GameObject settingsView;
     [SerializeField] private ReadController readController;
 
+    [SerializeField] private RectTransform historyButton;
+    [SerializeField] private RectTransform settingsButton;
+
     private void Update()
     {
         if (Input.GetButtonDown(ControlStore.INTERACT_BUTTON) &&
             GlobalClientStatus.gameStatus == GlobalGameStatus.IN_GAME)
         {
+            if (RectTransformUtility.RectangleContainsScreenPoint(historyButton, Input.mousePosition))
+            {
+                GlobalClientStatus.gameStatus = GlobalGameStatus.IN_HISTORY;
+                historyView.SetActive(true);
+                return;
+            }
+
+            if (RectTransformUtility.RectangleContainsScreenPoint(settingsButton, Input.mousePosition))
+            {
+                GlobalClientStatus.gameStatus = GlobalGameStatus.IN_SETTINGS;
+                settingsView.SetActive(true);
+                return;
+            }
+
             if (GlobalClientStatus.readStatus == GlobalReadStatus.IN_SPEECH)
                 readController.showCurrentTextImmediately();
             else readController.loadChunkAndUpdateText();
