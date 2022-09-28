@@ -19,7 +19,7 @@ public class AudioController : MonoBehaviour {
 
     public void play(string name) {
         Sound sound = Array.Find(sounds, sound => sound.name == name);
-        sound.source.volume *= SettingsStore.SOUND_VOLUME;
+        sound.source.volume = SettingsStore.SOUND_VOLUME;
         sound.source.Play();
     }
 }

@@ -4,6 +4,7 @@ using TMPro;
 using UnityEngine;
 
 public class ReadController : MonoBehaviour {
+    
     [SerializeField] private TextAsset textAsset;
     [SerializeField] private TMP_Text dialogText;
     [SerializeField] private TMP_Text historyText;
@@ -11,8 +12,7 @@ public class ReadController : MonoBehaviour {
     [SerializeField] private AudioController audioController;
     
     private Story dialogStory;
-
-    private Fader fader;
+    
     private bool isDialogStarted = false;
     private bool isFadeInInterrapter = false;
 
@@ -21,7 +21,6 @@ public class ReadController : MonoBehaviour {
     private void Awake() {
         historyText.text = string.Empty;
 
-        fader = GetComponent<Fader>();
         networkController.parEvent += (sender, arg) => {
             switch (arg) {
                 case TagStore.CONNECTED:
@@ -53,16 +52,13 @@ public class ReadController : MonoBehaviour {
     private void Start() {
         dialogStory = new Story(textAsset.text);
         loadChunkAndUpdateText();
-        StartCoroutine(fader.fadeIn(dialogText.color));
     }
 
     private void checkTags() {
         if (dialogStory.currentTags.Contains(TagStore.BLOCK_SELF)) GlobalClientStatus.IS_BLOCKED = true;
         if (dialogStory.currentTags.Contains(TagStore.BLOCK_PAR)) networkController.sendMessage(TagStore.BLOCK_PAR);
         if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR)) networkController.sendMessage(TagStore.RELEASE_PAR);
-        if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR_LIM))
-            networkController.sendMessage(TagStore.RELEASE_PAR_LIM);
-
+        if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR_LIM)) networkController.sendMessage(TagStore.RELEASE_PAR_LIM);
         if (dialogStory.currentTags.Contains(TagStore.WAIT_PAR)) GlobalClientStatus.IS_PAR_CONNECTED = false;
         if (dialogStory.currentTags.Contains(TagStore.DUO)) networkController.sendMessage(TagStore.DUO);
     }
@@ -99,6 +95,6 @@ public class ReadController : MonoBehaviour {
     }
 
     private void endDialog() {
-        StartCoroutine(fader.fadeOut(dialogText.color));
+        
     }
 }
