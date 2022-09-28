@@ -1,34 +1,30 @@
 ﻿using System.Collections.Generic;
 using Ink.Parsed;
 
+namespace Ink {
+    public partial class InkParser {
+        protected List<Object> MultiDivert() {
+            Whitespace();
 
-namespace Ink
-{
-    public partial class InkParser
-    {
-        protected List<Parsed.Object> MultiDivert()
-        {
-            Whitespace ();
-
-            List<Parsed.Object> diverts = null;
+            List<Object> diverts = null;
 
             // Try single thread first
             var threadDivert = Parse(StartThread);
             if (threadDivert) {
-                diverts = new List<Object> ();
-                diverts.Add (threadDivert);
+                diverts = new List<Object>();
+                diverts.Add(threadDivert);
                 return diverts;
             }
 
             // Normal diverts and tunnels
-            var arrowsAndDiverts = Interleave<object> (
+            var arrowsAndDiverts = Interleave<object>(
                 ParseDivertArrowOrTunnelOnwards,
                 DivertIdentifierWithArguments);
 
             if (arrowsAndDiverts == null)
                 return null;
 
-            diverts = new List<Parsed.Object> ();
+            diverts = new List<Object>();
 
             // Possible patterns:
             //  ->                   -- explicit gather
@@ -43,26 +39,25 @@ namespace Ink
             //  -> div -> div ->-> div    (etc)
 
             // Look at the arrows and diverts
-            for (int i = 0; i < arrowsAndDiverts.Count; ++i) {
-                bool isArrow = (i % 2) == 0;
+            for (var i = 0; i < arrowsAndDiverts.Count; ++i) {
+                var isArrow = i % 2 == 0;
 
                 // Arrow string
                 if (isArrow) {
-
                     // Tunnel onwards
-                    if ((string)arrowsAndDiverts [i] == "->->") {
-
-                        bool tunnelOnwardsPlacementValid = (i == 0 || i == arrowsAndDiverts.Count - 1 || i == arrowsAndDiverts.Count - 2);
+                    if ((string)arrowsAndDiverts[i] == "->->") {
+                        var tunnelOnwardsPlacementValid = i == 0 || i == arrowsAndDiverts.Count - 1 ||
+                                                          i == arrowsAndDiverts.Count - 2;
                         if (!tunnelOnwardsPlacementValid)
-                            Error ("Tunnel onwards '->->' must only come at the begining or the start of a divert");
+                            Error("Tunnel onwards '->->' must only come at the begining or the start of a divert");
 
-                        var tunnelOnwards = new TunnelOnwards ();
+                        var tunnelOnwards = new TunnelOnwards();
                         if (i < arrowsAndDiverts.Count - 1) {
-                            var tunnelOnwardDivert = arrowsAndDiverts [i+1] as Parsed.Divert;
+                            var tunnelOnwardDivert = arrowsAndDiverts[i + 1] as Divert;
                             tunnelOnwards.divertAfter = tunnelOnwardDivert;
                         }
 
-                        diverts.Add (tunnelOnwards);
+                        diverts.Add(tunnelOnwards);
 
                         // Not allowed to do anything after a tunnel onwards.
                         // If we had anything left it would be caused in the above Error for
@@ -73,67 +68,62 @@ namespace Ink
 
                 // Divert
                 else {
-
-                    var divert = arrowsAndDiverts [i] as Divert;
+                    var divert = arrowsAndDiverts[i] as Divert;
 
                     // More to come? (further arrows) Must be tunnelling.
-                    if (i < arrowsAndDiverts.Count - 1) {
-                        divert.isTunnel = true;
-                    }
+                    if (i < arrowsAndDiverts.Count - 1) divert.isTunnel = true;
 
-                    diverts.Add (divert);
+                    diverts.Add(divert);
                 }
             }
 
             // Single -> (used for default choices)
             if (diverts.Count == 0 && arrowsAndDiverts.Count == 1) {
-                var gatherDivert = new Divert ((Parsed.Object)null);
+                var gatherDivert = new Divert(null);
                 gatherDivert.isEmpty = true;
-                diverts.Add (gatherDivert);
+                diverts.Add(gatherDivert);
 
                 if (!_parsingChoice)
-                    Error ("Empty diverts (->) are only valid on choices");
+                    Error("Empty diverts (->) are only valid on choices");
             }
 
             return diverts;
         }
 
-        protected Divert StartThread()
-        {
-            Whitespace ();
+        protected Divert StartThread() {
+            Whitespace();
 
             if (ParseThreadArrow() == null)
                 return null;
 
-            Whitespace ();
+            Whitespace();
 
-            var divert = Expect(DivertIdentifierWithArguments, "target for new thread", () => new Divert(null)) as Divert;
+            var divert =
+                Expect(DivertIdentifierWithArguments, "target for new thread", () => new Divert(null)) as Divert;
             divert.isThread = true;
 
             return divert;
         }
 
-        protected Divert DivertIdentifierWithArguments()
-        {
-            Whitespace ();
+        protected Divert DivertIdentifierWithArguments() {
+            Whitespace();
 
-            List<Identifier> targetComponents = Parse (DotSeparatedDivertPathComponents);
+            var targetComponents = Parse(DotSeparatedDivertPathComponents);
             if (targetComponents == null)
                 return null;
 
-            Whitespace ();
+            Whitespace();
 
             var optionalArguments = Parse(ExpressionFunctionCallArguments);
 
-            Whitespace ();
+            Whitespace();
 
-            var targetPath = new Path (targetComponents);
-            return new Divert (targetPath, optionalArguments);
+            var targetPath = new Path(targetComponents);
+            return new Divert(targetPath, optionalArguments);
         }
 
-        protected Divert SingleDivert()
-        {
-            var diverts = Parse (MultiDivert);
+        protected Divert SingleDivert() {
+            var diverts = Parse(MultiDivert);
             if (diverts == null)
                 return null;
 
@@ -149,58 +139,44 @@ namespace Ink
             // divert, and give a slightly less nice error
             // when you DO use a multi divert as a divert taret.
 
-            if (diverts.Count != 1) {
-                return null;
-            }
+            if (diverts.Count != 1) return null;
 
-            var singleDivert = diverts [0];
-            if (singleDivert is TunnelOnwards) {
-                return null;
-            }
+            var singleDivert = diverts[0];
+            if (singleDivert is TunnelOnwards) return null;
 
-            var divert = diverts [0] as Divert;
-            if (divert.isTunnel) {
-                return null;
-            }
+            var divert = diverts[0] as Divert;
+            if (divert.isTunnel) return null;
 
             return divert;
         }
 
-        List<Identifier> DotSeparatedDivertPathComponents()
-        {
-            return Interleave<Identifier> (Spaced (IdentifierWithMetadata), Exclude (String (".")));
+        private List<Identifier> DotSeparatedDivertPathComponents() {
+            return Interleave<Identifier>(Spaced(IdentifierWithMetadata), Exclude(String(".")));
         }
 
-        protected string ParseDivertArrowOrTunnelOnwards()
-        {
-            int numArrows = 0;
-            while (ParseString ("->") != null)
+        protected string ParseDivertArrowOrTunnelOnwards() {
+            var numArrows = 0;
+            while (ParseString("->") != null)
                 numArrows++;
 
-            if (numArrows == 0)
-                return null;
+            if (numArrows == 0) return null;
 
-            else if (numArrows == 1)
-                return "->";
+            if (numArrows == 1) return "->";
 
-            else if (numArrows == 2)
-                return "->->";
-
-            else {
-                Error ("Unexpected number of arrows in divert. Should only have '->' or '->->'");
+            if (numArrows == 2) {
                 return "->->";
             }
+
+            Error("Unexpected number of arrows in divert. Should only have '->' or '->->'");
+            return "->->";
         }
 
-        protected string ParseDivertArrow()
-        {
-            return ParseString ("->");
+        protected string ParseDivertArrow() {
+            return ParseString("->");
         }
 
-        protected string ParseThreadArrow()
-        {
-            return ParseString ("<-");
+        protected string ParseThreadArrow() {
+            return ParseString("<-");
         }
     }
 }
-

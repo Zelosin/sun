@@ -1,216 +1,95 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Diagnostics;
-using Ink.Runtime;
+using System.Linq;
 
-namespace Ink.Runtime
-{
-    public class Path : IEquatable<Path>
-	{
-        static string parentId = "^";
+namespace Ink.Runtime {
+    public class Path : IEquatable<Path> {
+        private static readonly string parentId = "^";
 
-        // Immutable Component
-        public class Component : IEquatable<Component>
-		{
-			public int index { get; private set; }
-			public string name { get; private set; }
-			public bool isIndex { get { return index >= 0; } }
-            public bool isParent {
-                get {
-                    return name == Path.parentId;
-                }
-            }
+        private readonly List<Component> _components;
+        private string _componentsString;
 
-			public Component(int index)
-			{
-				Debug.Assert(index >= 0);
-				this.index = index;
-				this.name = null;
-			}
+        public Path() {
+            _components = new List<Component>();
+        }
 
-			public Component(string name)
-			{
-				Debug.Assert(name != null && name.Length > 0);
-				this.name = name;
-				this.index = -1;
-			}
+        public Path(Component head, Path tail) : this() {
+            _components.Add(head);
+            _components.AddRange(tail._components);
+        }
 
-            public static Component ToParent()
-            {
-                return new Component (parentId);
-            }
+        public Path(IEnumerable<Component> components, bool relative = false) : this() {
+            _components.AddRange(components);
+            isRelative = relative;
+        }
 
-			public override string ToString ()
-			{
-				if (isIndex) {
-					return index.ToString ();
-				} else {
-					return name;
-				}
-			}
-
-            public override bool Equals (object obj)
-            {
-                return Equals (obj as Component);
-            }
-
-            public bool Equals(Component otherComp)
-            {
-                if (otherComp != null && otherComp.isIndex == this.isIndex) {
-                    if (isIndex) {
-                        return index == otherComp.index;   
-                    } else {
-                        return name == otherComp.name;
-                    }
-                }
-
-                return false;
-            }
-
-            public override int GetHashCode ()
-            {
-                if (isIndex)
-                    return this.index;
-                else
-                    return this.name.GetHashCode ();
-            }
-		}
-
-		public Component GetComponent(int index)
-		{
-			return _components[index];
-		}
+        public Path(string componentsString) : this() {
+            this.componentsString = componentsString;
+        }
 
         public bool isRelative { get; private set; }
 
-		public Component head 
-		{ 
-			get 
-			{ 
-				if (_components.Count > 0) {
-					return _components.First ();
-				} else {
-					return null;
-				}
-			} 
-		}
-
-		public Path tail 
-		{ 
-			get 
-			{
-				if (_components.Count >= 2) {
-					List<Component> tailComps = _components.GetRange (1, _components.Count - 1);
-					return new Path(tailComps);
-				} 
-
-                else {
-                    return Path.self;
-				}
-
-			}
-		}
-            
-		public int length { get { return _components.Count; } }
-
-		public Component lastComponent 
-		{ 
-			get 
-			{ 
-				var lastComponentIdx = _components.Count-1;
-				if( lastComponentIdx >= 0 )
-					return _components[lastComponentIdx];
-				else
-					return null;
-			} 
-		}
-
-        public bool containsNamedComponent {
+        public Component head {
             get {
-                foreach(var comp in _components) {
-                    if( !comp.isIndex ) {
-                        return true;
-                    }
-                }
-                return false;
+                if (_components.Count > 0)
+                    return _components.First();
+                return null;
             }
         }
 
-		public Path()
-		{
-			_components = new List<Component> ();
-		}
+        public Path tail {
+            get {
+                if (_components.Count >= 2) {
+                    var tailComps = _components.GetRange(1, _components.Count - 1);
+                    return new Path(tailComps);
+                }
 
-		public Path(Component head, Path tail) : this()
-		{
-			_components.Add (head);
-			_components.AddRange (tail._components);
-		}
+                return self;
+            }
+        }
 
-		public Path(IEnumerable<Component> components, bool relative = false) : this()
-		{
-			this._components.AddRange (components);
-            this.isRelative = relative;
-		}
+        public int length => _components.Count;
 
-        public Path(string componentsString) : this()
-        {
-            this.componentsString = componentsString;
+        public Component lastComponent {
+            get {
+                var lastComponentIdx = _components.Count - 1;
+                if (lastComponentIdx >= 0)
+                    return _components[lastComponentIdx];
+                return null;
+            }
+        }
+
+        public bool containsNamedComponent {
+            get {
+                foreach (var comp in _components)
+                    if (!comp.isIndex)
+                        return true;
+                return false;
+            }
         }
 
         public static Path self {
             get {
-                var path = new Path ();
+                var path = new Path();
                 path.isRelative = true;
                 return path;
             }
         }
 
-		public Path PathByAppendingPath(Path pathToAppend)
-		{
-            Path p = new Path ();
-
-            int upwardMoves = 0;
-            for (int i = 0; i < pathToAppend._components.Count; ++i) {
-                if (pathToAppend._components [i].isParent) {
-                    upwardMoves++;
-                } else {
-                    break;
-                }
-            }
-
-            for (int i = 0; i < this._components.Count - upwardMoves; ++i) {
-                p._components.Add (this._components [i]);
-            }
-
-            for(int i=upwardMoves; i<pathToAppend._components.Count; ++i) {
-                p._components.Add (pathToAppend._components [i]);
-            }
-
-			return p;
-		}
-
-        public Path PathByAppendingComponent (Component c)
-        {
-            Path p = new Path ();
-            p._components.AddRange (_components);
-            p._components.Add (c);
-            return p;
-        }
-
         public string componentsString {
             get {
-				if( _componentsString == null ) {
-					_componentsString = StringExt.Join (".", _components);
-					if (isRelative) _componentsString = "." + _componentsString;
-				}
-				return _componentsString;
+                if (_componentsString == null) {
+                    _componentsString = StringExt.Join(".", _components);
+                    if (isRelative) _componentsString = "." + _componentsString;
+                }
+
+                return _componentsString;
             }
             private set {
-                _components.Clear ();
+                _components.Clear();
 
-				_componentsString = value;
+                _componentsString = value;
 
                 // Empty path, empty components
                 // (path is to root, like "/" in file system)
@@ -221,57 +100,129 @@ namespace Ink.Runtime
                 //   .^.^.hello.5
                 // is equivalent to file system style path:
                 //  ../../hello/5
-                if (_componentsString [0] == '.') {
-                    this.isRelative = true;
-                    _componentsString = _componentsString.Substring (1);
-                } else {
-                    this.isRelative = false;
+                if (_componentsString[0] == '.') {
+                    isRelative = true;
+                    _componentsString = _componentsString.Substring(1);
+                }
+                else {
+                    isRelative = false;
                 }
 
                 var componentStrings = _componentsString.Split('.');
                 foreach (var str in componentStrings) {
                     int index;
-                    if (int.TryParse (str , out index)) {
-                        _components.Add (new Component (index));
-                    } else {
-                        _components.Add (new Component (str));
-                    }
+                    if (int.TryParse(str, out index))
+                        _components.Add(new Component(index));
+                    else
+                        _components.Add(new Component(str));
                 }
             }
         }
-		string _componentsString;
 
-		public override string ToString()
-		{
-            return componentsString;
-		}
-
-        public override bool Equals (object obj)
-        {
-            return Equals (obj as Path);
-        }
-
-        public bool Equals (Path otherPath)
-        {
+        public bool Equals(Path otherPath) {
             if (otherPath == null)
                 return false;
 
-            if (otherPath._components.Count != this._components.Count)
+            if (otherPath._components.Count != _components.Count)
                 return false;
 
-            if (otherPath.isRelative != this.isRelative)
+            if (otherPath.isRelative != isRelative)
                 return false;
 
-            return otherPath._components.SequenceEqual (this._components);
+            return otherPath._components.SequenceEqual(_components);
         }
 
-        public override int GetHashCode ()
-        {
+        public Component GetComponent(int index) {
+            return _components[index];
+        }
+
+        public Path PathByAppendingPath(Path pathToAppend) {
+            var p = new Path();
+
+            var upwardMoves = 0;
+            for (var i = 0; i < pathToAppend._components.Count; ++i)
+                if (pathToAppend._components[i].isParent)
+                    upwardMoves++;
+                else
+                    break;
+
+            for (var i = 0; i < _components.Count - upwardMoves; ++i) p._components.Add(_components[i]);
+
+            for (var i = upwardMoves; i < pathToAppend._components.Count; ++i)
+                p._components.Add(pathToAppend._components[i]);
+
+            return p;
+        }
+
+        public Path PathByAppendingComponent(Component c) {
+            var p = new Path();
+            p._components.AddRange(_components);
+            p._components.Add(c);
+            return p;
+        }
+
+        public override string ToString() {
+            return componentsString;
+        }
+
+        public override bool Equals(object obj) {
+            return Equals(obj as Path);
+        }
+
+        public override int GetHashCode() {
             // TODO: Better way to make a hash code!
-            return this.ToString ().GetHashCode ();
+            return ToString().GetHashCode();
         }
 
-		List<Component> _components;
-	}
-}
+        // Immutable Component
+        public class Component : IEquatable<Component> {
+            public Component(int index) {
+                Debug.Assert(index >= 0);
+                this.index = index;
+                name = null;
+            }
 
+            public Component(string name) {
+                Debug.Assert(name != null && name.Length > 0);
+                this.name = name;
+                index = -1;
+            }
+
+            public int index { get; }
+            public string name { get; }
+            public bool isIndex => index >= 0;
+
+            public bool isParent => name == parentId;
+
+            public bool Equals(Component otherComp) {
+                if (otherComp != null && otherComp.isIndex == isIndex) {
+                    if (isIndex)
+                        return index == otherComp.index;
+                    return name == otherComp.name;
+                }
+
+                return false;
+            }
+
+            public static Component ToParent() {
+                return new Component(parentId);
+            }
+
+            public override string ToString() {
+                if (isIndex)
+                    return index.ToString();
+                return name;
+            }
+
+            public override bool Equals(object obj) {
+                return Equals(obj as Component);
+            }
+
+            public override int GetHashCode() {
+                if (isIndex)
+                    return index;
+                return name.GetHashCode();
+            }
+        }
+    }
+}

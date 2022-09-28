@@ -1,19 +1,18 @@
-﻿using System.ComponentModel;
-using System.Collections.Generic;
+﻿using System;
+using System.Globalization;
 
-namespace Ink.Runtime
-{
+namespace Ink.Runtime {
     // Order is significant for type coersion.
     // If types aren't directly compatible for an operation,
     // they're coerced to the same type, downward.
     // Higher value types "infect" an operation.
     // (This may not be the most sensible thing to do, but it's worked so far!)
-    public enum ValueType
-    {
+    public enum ValueType {
         // Bool is new addition, keep enum values the same, with Int==0, Float==1 etc,
         // but for coersion rules, we want to keep bool with a lower value than Int
         // so that it converts in the right direction
-        Bool = -1, 
+        Bool = -1,
+
         // Used in coersion
         Int,
         Float,
@@ -25,272 +24,213 @@ namespace Ink.Runtime
         VariablePointer
     }
 
-    public abstract class Value : Runtime.Object
-    {
+    public abstract class Value : Object {
         public abstract ValueType valueType { get; }
         public abstract bool isTruthy { get; }
 
-        public abstract Value Cast(ValueType newType);
-
         public abstract object valueObject { get; }
 
-        public static Value Create(object val)
-        {
+        public abstract Value Cast(ValueType newType);
+
+        public static Value Create(object val) {
             // Implicitly lose precision from any doubles we get passed in
             if (val is double) {
-                double doub = (double)val;
+                var doub = (double)val;
                 val = (float)doub;
             }
 
-            if( val is bool ) {
+            if (val is bool)
                 return new BoolValue((bool)val);
-            } else if (val is int) {
-                return new IntValue ((int)val);
-            } else if (val is long) {
-                return new IntValue ((int)(long)val);
-            } else if (val is float) {
-                return new FloatValue ((float)val);
-            } else if (val is double) {
-                return new FloatValue ((float)(double)val);
-            } else if (val is string) {
-                return new StringValue ((string)val);
-            } else if (val is Path) {
-                return new DivertTargetValue ((Path)val);
-            } else if (val is InkList) {
-                return new ListValue ((InkList)val);
-            }
+            if (val is int)
+                return new IntValue((int)val);
+            if (val is long)
+                return new IntValue((int)(long)val);
+            if (val is float)
+                return new FloatValue((float)val);
+            if (val is double)
+                return new FloatValue((float)(double)val);
+            if (val is string)
+                return new StringValue((string)val);
+            if (val is Path)
+                return new DivertTargetValue((Path)val);
+            if (val is InkList) return new ListValue((InkList)val);
 
             return null;
         }
 
-        public override Object Copy()
-        {
-            return Create (valueObject);
+        public override Object Copy() {
+            return Create(valueObject);
         }
 
-        protected StoryException BadCastException (ValueType targetType)
-        {
-            return new StoryException ("Can't cast "+this.valueObject+" from " + this.valueType+" to "+targetType);
+        protected StoryException BadCastException(ValueType targetType) {
+            return new StoryException("Can't cast " + valueObject + " from " + valueType + " to " + targetType);
         }
     }
 
-    public abstract class Value<T> : Value
-    {
-        public T value { get; set; }
-
-        public override object valueObject {
-            get {
-                return (object)value;
-            }
-        }
-
-        public Value (T val)
-        {
+    public abstract class Value<T> : Value {
+        public Value(T val) {
             value = val;
         }
 
-        public override string ToString ()
-        {
+        public T value { get; set; }
+
+        public override object valueObject => value;
+
+        public override string ToString() {
             return value.ToString();
         }
     }
 
-    public class BoolValue : Value<bool>
-    {
-        public override ValueType valueType { get { return ValueType.Bool; } }
-        public override bool isTruthy { get { return value; } }
+    public class BoolValue : Value<bool> {
+        public BoolValue(bool boolVal) : base(boolVal) { }
 
-        public BoolValue(bool boolVal) : base(boolVal)
-        {
+        public BoolValue() : this(false) { }
+        public override ValueType valueType => ValueType.Bool;
+        public override bool isTruthy => value;
+
+        public override Value Cast(ValueType newType) {
+            if (newType == valueType) return this;
+
+            if (newType == ValueType.Int) return new IntValue(value ? 1 : 0);
+
+            if (newType == ValueType.Float) return new FloatValue(value ? 1.0f : 0.0f);
+
+            if (newType == ValueType.String) return new StringValue(value ? "true" : "false");
+
+            throw BadCastException(newType);
         }
 
-        public BoolValue() : this(false) {}
-
-        public override Value Cast(ValueType newType)
-        {
-            if (newType == valueType) {
-                return this;
-            }
-
-            if (newType == ValueType.Int) {
-                return new IntValue (this.value ? 1 : 0);
-            }
-
-            if (newType == ValueType.Float) {
-                return new FloatValue (this.value ? 1.0f : 0.0f);
-            }
-
-            if (newType == ValueType.String) {
-                return new StringValue(this.value ? "true" : "false");
-            }
-
-            throw BadCastException (newType);
-        }
-
-        public override string ToString ()
-        {
+        public override string ToString() {
             // Instead of C# "True" / "False"
             return value ? "true" : "false";
         }
     }
 
-    public class IntValue : Value<int>
-    {
-        public override ValueType valueType { get { return ValueType.Int; } }
-        public override bool isTruthy { get { return value != 0; } }
+    public class IntValue : Value<int> {
+        public IntValue(int intVal) : base(intVal) { }
 
-        public IntValue(int intVal) : base(intVal)
-        {
-        }
+        public IntValue() : this(0) { }
+        public override ValueType valueType => ValueType.Int;
+        public override bool isTruthy => value != 0;
 
-        public IntValue() : this(0) {}
+        public override Value Cast(ValueType newType) {
+            if (newType == valueType) return this;
 
-        public override Value Cast(ValueType newType)
-        {
-            if (newType == valueType) {
-                return this;
-            }
+            if (newType == ValueType.Bool) return new BoolValue(value == 0 ? false : true);
 
-            if (newType == ValueType.Bool) {
-                return new BoolValue (this.value == 0 ? false : true);
-            }
+            if (newType == ValueType.Float) return new FloatValue(value);
 
-            if (newType == ValueType.Float) {
-                return new FloatValue ((float)this.value);
-            }
+            if (newType == ValueType.String) return new StringValue("" + value);
 
-            if (newType == ValueType.String) {
-                return new StringValue("" + this.value);
-            }
-
-            throw BadCastException (newType);
+            throw BadCastException(newType);
         }
     }
 
-    public class FloatValue : Value<float>
-    {
-        public override ValueType valueType { get { return ValueType.Float; } }
-        public override bool isTruthy { get { return value != 0.0f; } }
+    public class FloatValue : Value<float> {
+        public FloatValue(float val) : base(val) { }
 
-        public FloatValue(float val) : base(val)
-        {
-        }
+        public FloatValue() : this(0.0f) { }
+        public override ValueType valueType => ValueType.Float;
+        public override bool isTruthy => value != 0.0f;
 
-        public FloatValue() : this(0.0f) {}
+        public override Value Cast(ValueType newType) {
+            if (newType == valueType) return this;
 
-        public override Value Cast(ValueType newType)
-        {
-            if (newType == valueType) {
-                return this;
-            }
+            if (newType == ValueType.Bool) return new BoolValue(value == 0.0f ? false : true);
 
-            if (newType == ValueType.Bool) {
-                return new BoolValue (this.value == 0.0f ? false : true);
-            }
+            if (newType == ValueType.Int) return new IntValue((int)value);
 
-            if (newType == ValueType.Int) {
-                return new IntValue ((int)this.value);
-            }
+            if (newType == ValueType.String) return new StringValue("" + value.ToString(CultureInfo.InvariantCulture));
 
-            if (newType == ValueType.String) {
-                return new StringValue("" + this.value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            }
-
-            throw BadCastException (newType);
+            throw BadCastException(newType);
         }
     }
 
-    public class StringValue : Value<string>
-    {
-        public override ValueType valueType { get { return ValueType.String; } }
-        public override bool isTruthy { get { return value.Length > 0; } }
-
-        public bool isNewline { get; private set; }
-        public bool isInlineWhitespace { get; private set; }
-        public bool isNonWhitespace {
-            get {
-                return !isNewline && !isInlineWhitespace;
-            }
-        }
-
-        public StringValue(string str) : base(str)
-        {
+    public class StringValue : Value<string> {
+        public StringValue(string str) : base(str) {
             // Classify whitespace status
             isNewline = value == "\n";
             isInlineWhitespace = true;
-            foreach (var c in value) {
+            foreach (var c in value)
                 if (c != ' ' && c != '\t') {
                     isInlineWhitespace = false;
                     break;
                 }
-            }
         }
 
-        public StringValue() : this("") {}
+        public StringValue() : this("") { }
+        public override ValueType valueType => ValueType.String;
+        public override bool isTruthy => value.Length > 0;
 
-        public override Value Cast(ValueType newType)
-        {
-            if (newType == valueType) {
-                return this;
-            }
+        public bool isNewline { get; }
+        public bool isInlineWhitespace { get; }
+
+        public bool isNonWhitespace => !isNewline && !isInlineWhitespace;
+
+        public override Value Cast(ValueType newType) {
+            if (newType == valueType) return this;
 
             if (newType == ValueType.Int) {
-
                 int parsedInt;
-                if (int.TryParse (value, out parsedInt)) {
-                    return new IntValue (parsedInt);
-                } else {
-                    return null;
-                }
+                if (int.TryParse(value, out parsedInt))
+                    return new IntValue(parsedInt);
+                return null;
             }
 
             if (newType == ValueType.Float) {
                 float parsedFloat;
-                if (float.TryParse (value, System.Globalization.NumberStyles.Float ,System.Globalization.CultureInfo.InvariantCulture, out parsedFloat)) {
-                    return new FloatValue (parsedFloat);
-                } else {
-                    return null;
-                }
+                if (float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsedFloat))
+                    return new FloatValue(parsedFloat);
+                return null;
             }
 
-            throw BadCastException (newType);
+            throw BadCastException(newType);
         }
     }
 
-    public class DivertTargetValue : Value<Path>
-    {
-        public Path targetPath { get { return this.value; } set { this.value = value; } }
-        public override ValueType valueType { get { return ValueType.DivertTarget; } }
-        public override bool isTruthy { get { throw new System.Exception("Shouldn't be checking the truthiness of a divert target"); } }
-            
-        public DivertTargetValue(Path targetPath) : base(targetPath)
-        {
+    public class DivertTargetValue : Value<Path> {
+        public DivertTargetValue(Path targetPath) : base(targetPath) { }
+
+        public DivertTargetValue() : base(null) { }
+
+        public Path targetPath {
+            get => value;
+            set => this.value = value;
         }
 
-        public DivertTargetValue() : base(null)
-        {}
+        public override ValueType valueType => ValueType.DivertTarget;
+        public override bool isTruthy => throw new Exception("Shouldn't be checking the truthiness of a divert target");
 
-        public override Value Cast(ValueType newType)
-        {
+        public override Value Cast(ValueType newType) {
             if (newType == valueType)
                 return this;
-            
-            throw BadCastException (newType);
+
+            throw BadCastException(newType);
         }
 
-        public override string ToString ()
-        {
+        public override string ToString() {
             return "DivertTargetValue(" + targetPath + ")";
         }
     }
 
     // TODO: Think: Erm, I get that this contains a string, but should
     // we really derive from Value<string>? That seems a bit misleading to me.
-    public class VariablePointerValue : Value<string>
-    {
-        public string variableName { get { return this.value; } set { this.value = value; } }
-        public override ValueType valueType { get { return ValueType.VariablePointer; } }
-        public override bool isTruthy { get { throw new System.Exception("Shouldn't be checking the truthiness of a variable pointer"); } }
+    public class VariablePointerValue : Value<string> {
+        public VariablePointerValue(string variableName, int contextIndex = -1) : base(variableName) {
+            this.contextIndex = contextIndex;
+        }
+
+        public VariablePointerValue() : this(null) { }
+
+        public string variableName {
+            get => value;
+            set => this.value = value;
+        }
+
+        public override ValueType valueType => ValueType.VariablePointer;
+
+        public override bool isTruthy =>
+            throw new Exception("Shouldn't be checking the truthiness of a variable pointer");
 
         // Where the variable is located
         // -1 = default, unknown, yet to be determined
@@ -298,108 +238,77 @@ namespace Ink.Runtime
         // 1+ = callstack element index + 1 (so that the first doesn't conflict with special global scope)
         public int contextIndex { get; set; }
 
-        public VariablePointerValue(string variableName, int contextIndex = -1) : base(variableName)
-        {
-            this.contextIndex = contextIndex;
-        }
-
-        public VariablePointerValue() : this(null)
-        {
-        }
-
-        public override Value Cast(ValueType newType)
-        {
+        public override Value Cast(ValueType newType) {
             if (newType == valueType)
                 return this;
 
-            throw BadCastException (newType);
+            throw BadCastException(newType);
         }
 
-        public override string ToString ()
-        {
+        public override string ToString() {
             return "VariablePointerValue(" + variableName + ")";
         }
 
-        public override Object Copy()
-        {
-            return new VariablePointerValue (variableName, contextIndex);
+        public override Object Copy() {
+            return new VariablePointerValue(variableName, contextIndex);
         }
     }
 
-    public class ListValue : Value<InkList>
-    {
-        public override ValueType valueType {
-            get {
-                return ValueType.List;
-            }
+    public class ListValue : Value<InkList> {
+        public ListValue() : base(null) {
+            value = new InkList();
         }
+
+        public ListValue(InkList list) : base(null) {
+            value = new InkList(list);
+        }
+
+        public ListValue(InkListItem singleItem, int singleValue) : base(null) {
+            value = new InkList {
+                { singleItem, singleValue }
+            };
+        }
+
+        public override ValueType valueType => ValueType.List;
 
         // Truthy if it is non-empty
-        public override bool isTruthy {
-            get {
-                return value.Count > 0;
-            }
-        }
-                
-        public override Value Cast (ValueType newType)
-        {
+        public override bool isTruthy => value.Count > 0;
+
+        public override Value Cast(ValueType newType) {
             if (newType == ValueType.Int) {
                 var max = value.maxItem;
-                if( max.Key.isNull )
-                    return new IntValue (0);
-                else
-                    return new IntValue (max.Value);
+                if (max.Key.isNull)
+                    return new IntValue(0);
+                return new IntValue(max.Value);
             }
 
-            else if (newType == ValueType.Float) {
+            if (newType == ValueType.Float) {
                 var max = value.maxItem;
                 if (max.Key.isNull)
-                    return new FloatValue (0.0f);
-                else
-                    return new FloatValue ((float)max.Value);
+                    return new FloatValue(0.0f);
+                return new FloatValue(max.Value);
             }
 
-            else if (newType == ValueType.String) {
+            if (newType == ValueType.String) {
                 var max = value.maxItem;
                 if (max.Key.isNull)
-                    return new StringValue ("");
-                else {
-                    return new StringValue (max.Key.ToString());
-                }
+                    return new StringValue("");
+                return new StringValue(max.Key.ToString());
             }
 
             if (newType == valueType)
                 return this;
 
-            throw BadCastException (newType);
+            throw BadCastException(newType);
         }
 
-        public ListValue () : base(null) {
-            value = new InkList ();
-        }
-
-        public ListValue (InkList list) : base (null)
-        {
-            value = new InkList (list);
-        }
-
-        public ListValue (InkListItem singleItem, int singleValue) : base (null)
-        {
-            value = new InkList {
-                {singleItem, singleValue}
-            };
-        }
-
-        public static void RetainListOriginsForAssignment (Runtime.Object oldValue, Runtime.Object newValue)
-        {
+        public static void RetainListOriginsForAssignment(Object oldValue, Object newValue) {
             var oldList = oldValue as ListValue;
             var newList = newValue as ListValue;
 
             // When assigning the emtpy list, try to retain any initial origin names
             if (oldList && newList && newList.value.Count == 0)
-                newList.value.SetInitialOriginNames (oldList.value.originNames);
+                newList.value.SetInitialOriginNames(oldList.value.originNames);
         }
     }
-        
 }
- 

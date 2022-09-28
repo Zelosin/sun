@@ -1,8 +1,7 @@
+namespace Ink {
+    public partial class InkParser {
+        private CharacterSet _runtimePathCharacterSet;
 
-namespace Ink
-{
-    public partial class InkParser
-    {
         // Valid returned objects:
         //  - "help"
         //  - int: for choice number
@@ -11,119 +10,105 @@ namespace Ink
         //  - Epression
         //  - Lookup debug source for character offset
         //  - Lookup debug source for runtime path
-        public CommandLineInput CommandLineUserInput()
-        {
-            CommandLineInput result = new CommandLineInput ();
+        public CommandLineInput CommandLineUserInput() {
+            var result = new CommandLineInput();
 
-            Whitespace ();
+            Whitespace();
 
-            if (ParseString ("help") != null) {
+            if (ParseString("help") != null) {
                 result.isHelp = true;
                 return result;
             }
 
-            if (ParseString ("exit") != null || ParseString ("quit") != null) {
+            if (ParseString("exit") != null || ParseString("quit") != null) {
                 result.isExit = true;
                 return result;
             }
 
-            return (CommandLineInput) OneOf (
+            return (CommandLineInput)OneOf(
                 DebugSource,
                 DebugPathLookup,
-                UserChoiceNumber, 
+                UserChoiceNumber,
                 UserImmediateModeStatement
             );
         }
 
-        CommandLineInput DebugSource ()
-        {
-            Whitespace ();
+        private CommandLineInput DebugSource() {
+            Whitespace();
 
-            if (ParseString ("DebugSource") == null)
+            if (ParseString("DebugSource") == null)
                 return null;
 
-            Whitespace ();
+            Whitespace();
 
             var expectMsg = "character offset in parentheses, e.g. DebugSource(5)";
-            if (Expect (String ("("), expectMsg) == null)
+            if (Expect(String("("), expectMsg) == null)
                 return null;
 
-            Whitespace ();
+            Whitespace();
 
-            int? characterOffset = ParseInt ();
+            var characterOffset = ParseInt();
             if (characterOffset == null) {
-                Error (expectMsg);
+                Error(expectMsg);
                 return null;
             }
 
-            Whitespace ();
+            Whitespace();
 
-            Expect (String (")"), "closing parenthesis");
+            Expect(String(")"), "closing parenthesis");
 
-            var inputStruct = new CommandLineInput ();
+            var inputStruct = new CommandLineInput();
             inputStruct.debugSource = characterOffset;
             return inputStruct;
         }
 
-        CommandLineInput DebugPathLookup ()
-        {
-            Whitespace ();
+        private CommandLineInput DebugPathLookup() {
+            Whitespace();
 
-            if (ParseString ("DebugPath") == null)
+            if (ParseString("DebugPath") == null)
                 return null;
 
-            if (Whitespace () == null)
+            if (Whitespace() == null)
                 return null;
 
-            var pathStr = Expect (RuntimePath, "path") as string;
+            var pathStr = Expect(RuntimePath, "path") as string;
 
-            var inputStruct = new CommandLineInput ();
+            var inputStruct = new CommandLineInput();
             inputStruct.debugPathLookup = pathStr;
             return inputStruct;
         }
 
-        string RuntimePath ()
-        {
+        private string RuntimePath() {
             if (_runtimePathCharacterSet == null) {
-                _runtimePathCharacterSet = new CharacterSet (identifierCharSet);
-                _runtimePathCharacterSet.Add ('-'); // for c-0, g-0 etc
-                _runtimePathCharacterSet.Add ('.');
-
+                _runtimePathCharacterSet = new CharacterSet(identifierCharSet);
+                _runtimePathCharacterSet.Add('-'); // for c-0, g-0 etc
+                _runtimePathCharacterSet.Add('.');
             }
-            
-            return ParseCharactersFromCharSet (_runtimePathCharacterSet);
+
+            return ParseCharactersFromCharSet(_runtimePathCharacterSet);
         }
 
-        CommandLineInput UserChoiceNumber()
-        {
-            Whitespace ();
+        private CommandLineInput UserChoiceNumber() {
+            Whitespace();
 
-            int? number = ParseInt ();
-            if (number == null) {
-                return null;
-            }
+            var number = ParseInt();
+            if (number == null) return null;
 
-            Whitespace ();
+            Whitespace();
 
-            if (Parse(EndOfLine) == null) {
-                return null;
-            }
+            if (Parse(EndOfLine) == null) return null;
 
-            var inputStruct = new CommandLineInput ();
+            var inputStruct = new CommandLineInput();
             inputStruct.choiceInput = number;
             return inputStruct;
         }
 
-        CommandLineInput UserImmediateModeStatement()
-        {
-            var statement = OneOf (SingleDivert, TempDeclarationOrAssignment, Expression);
+        private CommandLineInput UserImmediateModeStatement() {
+            var statement = OneOf(SingleDivert, TempDeclarationOrAssignment, Expression);
 
-            var inputStruct = new CommandLineInput ();
+            var inputStruct = new CommandLineInput();
             inputStruct.userImmediateModeStatement = statement;
             return inputStruct;
         }
-
-        CharacterSet _runtimePathCharacterSet;
     }
 }
-

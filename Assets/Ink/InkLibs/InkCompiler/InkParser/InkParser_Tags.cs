@@ -1,50 +1,46 @@
-﻿using System.Text;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using Ink.Parsed;
 
-namespace Ink
-{
-    public partial class InkParser
-    {
-        protected Parsed.Tag Tag ()
-        {
-            Whitespace ();
+namespace Ink {
+    public partial class InkParser {
+        private readonly CharacterSet _endOfTagCharSet = new("#\n\r\\");
 
-            if (ParseString ("#") == null)
+        protected Tag Tag() {
+            Whitespace();
+
+            if (ParseString("#") == null)
                 return null;
 
-            Whitespace ();
+            Whitespace();
 
-            var sb = new StringBuilder ();
+            var sb = new StringBuilder();
             do {
                 // Read up to another #, end of input or newline
-                string tagText = ParseUntilCharactersFromCharSet (_endOfTagCharSet);
-                sb.Append (tagText);
+                var tagText = ParseUntilCharactersFromCharSet(_endOfTagCharSet);
+                sb.Append(tagText);
 
                 // Escape character
-                if (ParseString ("\\") != null) {
-                    char c = ParseSingleCharacter ();
-                    if( c != (char)0 ) sb.Append(c);
+                if (ParseString("\\") != null) {
+                    var c = ParseSingleCharacter();
+                    if (c != (char)0) sb.Append(c);
                     continue;
                 }
 
                 break;
-            } while ( true );
+            } while (true);
 
-            var fullTagText = sb.ToString ().Trim();
+            var fullTagText = sb.ToString().Trim();
 
-            return new Parsed.Tag (new Runtime.Tag (fullTagText));
+            return new Tag(new Runtime.Tag(fullTagText));
         }
 
-        protected List<Parsed.Tag> Tags ()
-        {
-            var tags = OneOrMore (Tag);
+        protected List<Tag> Tags() {
+            var tags = OneOrMore(Tag);
             if (tags == null) return null;
 
-            return tags.Cast<Parsed.Tag>().ToList();
+            return tags.Cast<Tag>().ToList();
         }
-
-        CharacterSet _endOfTagCharSet = new CharacterSet ("#\n\r\\");
     }
 }
-

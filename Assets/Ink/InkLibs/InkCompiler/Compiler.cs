@@ -1,79 +1,73 @@
 ﻿using System;
 using System.Collections.Generic;
-using Ink;
+using Ink.Parsed;
+using Ink.Runtime;
+using Divert = Ink.Parsed.Divert;
+using Object = Ink.Parsed.Object;
+using Path = Ink.Runtime.Path;
+using Story = Ink.Runtime.Story;
+using VariableAssignment = Ink.Parsed.VariableAssignment;
 
-namespace Ink
-{
-    public class Compiler
-    {
-        public class Options
-        {
-            public string sourceFilename;
-            public List<string> pluginNames;
-            public bool countAllVisits;
-            public Ink.ErrorHandler errorHandler;
-            public Ink.IFileHandler fileHandler;
-        }
+namespace Ink {
+    public class Compiler {
+        private readonly List<DebugSourceRange> _debugSourceRanges = new();
 
-        public Parsed.Story parsedStory {
-            get {
-                return _parsedStory;
-            }
-        }
+        private bool _hadParseError;
 
-        public Compiler (string inkSource, Options options = null)
-        {
+        private readonly string _inputString;
+        private readonly Options _options;
+
+
+        private InkParser _parser;
+
+        private readonly PluginManager _pluginManager;
+        private Story _runtimeStory;
+
+        public Compiler(string inkSource, Options options = null) {
             _inputString = inkSource;
             _options = options ?? new Options();
-            if( _options.pluginNames != null )
-                _pluginManager = new PluginManager (_options.pluginNames);
+            if (_options.pluginNames != null)
+                _pluginManager = new PluginManager(_options.pluginNames);
         }
 
-        public Parsed.Story Parse()
-        {
+        public Parsed.Story parsedStory { get; private set; }
+
+        public Parsed.Story Parse() {
             _parser = new InkParser(_inputString, _options.sourceFilename, OnParseError, _options.fileHandler);
-            _parsedStory = _parser.Parse();
-            return _parsedStory;
+            parsedStory = _parser.Parse();
+            return parsedStory;
         }
 
-        public Runtime.Story Compile ()
-        {
+        public Story Compile() {
             Parse();
 
-            if( _pluginManager != null )
-                _pluginManager.PostParse(_parsedStory);
+            if (_pluginManager != null)
+                _pluginManager.PostParse(parsedStory);
 
-            if (_parsedStory != null && !_hadParseError) {
+            if (parsedStory != null && !_hadParseError) {
+                parsedStory.countAllVisits = _options.countAllVisits;
 
-                _parsedStory.countAllVisits = _options.countAllVisits;
+                _runtimeStory = parsedStory.ExportRuntime(_options.errorHandler);
 
-                _runtimeStory = _parsedStory.ExportRuntime (_options.errorHandler);
-
-                if( _pluginManager != null )
-                    _pluginManager.PostExport (_parsedStory, _runtimeStory);
-            } else {
+                if (_pluginManager != null)
+                    _pluginManager.PostExport(parsedStory, _runtimeStory);
+            }
+            else {
                 _runtimeStory = null;
             }
 
             return _runtimeStory;
         }
 
-        public class CommandLineInputResult {
-            public bool requestsExit;
-            public int choiceIdx = -1;
-            public string divertedPath;
-            public string output;
-        }
-        public CommandLineInputResult HandleInput (CommandLineInput inputResult)
-        {
-            var result = new CommandLineInputResult ();
+        public CommandLineInputResult HandleInput(CommandLineInput inputResult) {
+            var result = new CommandLineInputResult();
 
             // Request for debug source line number
             if (inputResult.debugSource != null) {
                 var offset = (int)inputResult.debugSource;
-                var dm = DebugMetadataForContentAtOffset (offset);
+                var dm = DebugMetadataForContentAtOffset(offset);
                 if (dm != null)
-                    result.output = "DebugSource: " + dm.ToString ();
+                    result.output = "DebugSource: " + dm;
                 else
                     result.output = "DebugSource: Unknown source";
             }
@@ -81,84 +75,78 @@ namespace Ink
             // Request for runtime path lookup (to line number)
             else if (inputResult.debugPathLookup != null) {
                 var pathStr = inputResult.debugPathLookup;
-                var contentResult = _runtimeStory.ContentAtPath (new Runtime.Path (pathStr));
+                var contentResult = _runtimeStory.ContentAtPath(new Path(pathStr));
                 var dm = contentResult.obj.debugMetadata;
-                if( dm != null )
-                    result.output = "DebugSource: " + dm.ToString ();
+                if (dm != null)
+                    result.output = "DebugSource: " + dm;
                 else
                     result.output = "DebugSource: Unknown source";
             }
 
             // User entered some ink
             else if (inputResult.userImmediateModeStatement != null) {
-                var parsedObj = inputResult.userImmediateModeStatement as Parsed.Object;
+                var parsedObj = inputResult.userImmediateModeStatement as Object;
                 return ExecuteImmediateStatement(parsedObj);
-
-            } else {
-              return null;
+            }
+            else {
+                return null;
             }
 
             return result;
         }
 
-        CommandLineInputResult ExecuteImmediateStatement(Parsed.Object parsedObj) {
-            var result = new CommandLineInputResult ();
+        private CommandLineInputResult ExecuteImmediateStatement(Object parsedObj) {
+            var result = new CommandLineInputResult();
 
-           // Variable assignment: create in Parsed.Story as well as the Runtime.Story
-           // so that we don't get an error message during reference resolution
-           if (parsedObj is Parsed.VariableAssignment) {
-               var varAssign = (Parsed.VariableAssignment)parsedObj;
-               if (varAssign.isNewTemporaryDeclaration) {
-                   _parsedStory.TryAddNewVariableDeclaration (varAssign);
-               }
-           }
+            // Variable assignment: create in Parsed.Story as well as the Runtime.Story
+            // so that we don't get an error message during reference resolution
+            if (parsedObj is VariableAssignment) {
+                var varAssign = (VariableAssignment)parsedObj;
+                if (varAssign.isNewTemporaryDeclaration) parsedStory.TryAddNewVariableDeclaration(varAssign);
+            }
 
-           parsedObj.parent = _parsedStory;
-           var runtimeObj = parsedObj.runtimeObject;
+            parsedObj.parent = parsedStory;
+            var runtimeObj = parsedObj.runtimeObject;
 
-           parsedObj.ResolveReferences (_parsedStory);
+            parsedObj.ResolveReferences(parsedStory);
 
-           if (!_parsedStory.hadError) {
+            if (!parsedStory.hadError) {
+                // Divert
+                if (parsedObj is Divert) {
+                    var parsedDivert = parsedObj as Divert;
+                    result.divertedPath = parsedDivert.runtimeDivert.targetPath.ToString();
+                }
 
-               // Divert
-               if (parsedObj is Parsed.Divert) {
-                   var parsedDivert = parsedObj as Parsed.Divert;
-                   result.divertedPath = parsedDivert.runtimeDivert.targetPath.ToString();
-               }
+                // Expression or variable assignment
+                else if (parsedObj is Expression || parsedObj is VariableAssignment) {
+                    var evalResult = _runtimeStory.EvaluateExpression((Container)runtimeObj);
+                    if (evalResult != null) result.output = evalResult.ToString();
+                }
+            }
+            else {
+                parsedStory.ResetError();
+            }
 
-               // Expression or variable assignment
-               else if (parsedObj is Parsed.Expression || parsedObj is Parsed.VariableAssignment) {
-                   var evalResult = _runtimeStory.EvaluateExpression ((Runtime.Container)runtimeObj);
-                   if (evalResult != null) {
-                       result.output = evalResult.ToString ();
-                   }
-               }
-           } else {
-               _parsedStory.ResetError ();
-           }
-
-          return result;
+            return result;
         }
 
-        public void RetrieveDebugSourceForLatestContent ()
-        {
+        public void RetrieveDebugSourceForLatestContent() {
             foreach (var outputObj in _runtimeStory.state.outputStream) {
-                var textContent = outputObj as Runtime.StringValue;
+                var textContent = outputObj as StringValue;
                 if (textContent != null) {
-                    var range = new DebugSourceRange ();
+                    var range = new DebugSourceRange();
                     range.length = textContent.value.Length;
                     range.debugMetadata = textContent.debugMetadata;
                     range.text = textContent.value;
-                    _debugSourceRanges.Add (range);
+                    _debugSourceRanges.Add(range);
                 }
             }
         }
 
-        Runtime.DebugMetadata DebugMetadataForContentAtOffset (int offset)
-        {
-            int currOffset = 0;
+        private DebugMetadata DebugMetadataForContentAtOffset(int offset) {
+            var currOffset = 0;
 
-            Runtime.DebugMetadata lastValidMetadata = null;
+            DebugMetadata lastValidMetadata = null;
             foreach (var range in _debugSourceRanges) {
                 if (range.debugMetadata != null)
                     lastValidMetadata = range.debugMetadata;
@@ -172,38 +160,37 @@ namespace Ink
             return null;
         }
 
-        public struct DebugSourceRange
-        {
-            public int length;
-            public Runtime.DebugMetadata debugMetadata;
-            public string text;
-        }
-
         // Need to wrap the error handler so that we know
         // when there was a critical error between parse and codegen stages
-        void OnParseError (string message, ErrorType errorType)
-        {
-            if( errorType == ErrorType.Error )
+        private void OnParseError(string message, ErrorType errorType) {
+            if (errorType == ErrorType.Error)
                 _hadParseError = true;
-            
+
             if (_options.errorHandler != null)
-                _options.errorHandler (message, errorType);
+                _options.errorHandler(message, errorType);
             else
-                throw new System.Exception(message);
+                throw new Exception(message);
         }
 
-        string _inputString;
-        Options _options;
+        public class Options {
+            public bool countAllVisits;
+            public ErrorHandler errorHandler;
+            public IFileHandler fileHandler;
+            public List<string> pluginNames;
+            public string sourceFilename;
+        }
 
+        public class CommandLineInputResult {
+            public int choiceIdx = -1;
+            public string divertedPath;
+            public string output;
+            public bool requestsExit;
+        }
 
-        InkParser _parser;
-        Parsed.Story _parsedStory;
-        Runtime.Story _runtimeStory;
-
-        PluginManager _pluginManager;
-
-        bool _hadParseError;
-
-        List<DebugSourceRange> _debugSourceRanges = new List<DebugSourceRange> ();
+        public struct DebugSourceRange {
+            public int length;
+            public DebugMetadata debugMetadata;
+            public string text;
+        }
     }
 }

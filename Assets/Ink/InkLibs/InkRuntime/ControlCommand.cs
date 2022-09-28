@@ -1,11 +1,6 @@
-﻿using System;
-
-namespace Ink.Runtime
-{
-    public class ControlCommand : Runtime.Object
-    {
-        public enum CommandType
-        {
+﻿namespace Ink.Runtime {
+    public class ControlCommand : Object {
+        public enum CommandType {
             NotSet = -1,
             EvalStart,
             EvalOutput,
@@ -31,23 +26,22 @@ namespace Ink.Runtime
             ListFromInt,
             ListRange,
             ListRandom,
+
             //----
             TOTAL_VALUES
         }
-            
-        public CommandType commandType { get; protected set; }
 
-        public ControlCommand (CommandType commandType)
-        {
+        public ControlCommand(CommandType commandType) {
             this.commandType = commandType;
         }
 
         // Require default constructor for serialisation
-        public ControlCommand() : this(CommandType.NotSet) {}
+        public ControlCommand() : this(CommandType.NotSet) { }
 
-        public override Object Copy()
-        {
-            return new ControlCommand (commandType);
+        public CommandType commandType { get; protected set; }
+
+        public override Object Copy() {
+            return new ControlCommand(commandType);
         }
 
         // The following static factory methods are to make generating these objects
@@ -76,23 +70,23 @@ namespace Ink.Runtime
         }
 
         public static ControlCommand PopEvaluatedValue() {
-            return new ControlCommand (CommandType.PopEvaluatedValue);
+            return new ControlCommand(CommandType.PopEvaluatedValue);
         }
 
         public static ControlCommand PopFunction() {
-            return new ControlCommand (CommandType.PopFunction);
+            return new ControlCommand(CommandType.PopFunction);
         }
 
         public static ControlCommand PopTunnel() {
-            return new ControlCommand (CommandType.PopTunnel);
+            return new ControlCommand(CommandType.PopTunnel);
         }
-            
+
         public static ControlCommand BeginString() {
-            return new ControlCommand (CommandType.BeginString);
+            return new ControlCommand(CommandType.BeginString);
         }
 
         public static ControlCommand EndString() {
-            return new ControlCommand (CommandType.EndString);
+            return new ControlCommand(CommandType.EndString);
         }
 
         public static ControlCommand NoOp() {
@@ -103,68 +97,60 @@ namespace Ink.Runtime
             return new ControlCommand(CommandType.ChoiceCount);
         }
 
-        public static ControlCommand Turns ()
-        {
-            return new ControlCommand (CommandType.Turns);
+        public static ControlCommand Turns() {
+            return new ControlCommand(CommandType.Turns);
         }
 
         public static ControlCommand TurnsSince() {
             return new ControlCommand(CommandType.TurnsSince);
         }
 
-        public static ControlCommand ReadCount ()
-        {
-            return new ControlCommand (CommandType.ReadCount);
+        public static ControlCommand ReadCount() {
+            return new ControlCommand(CommandType.ReadCount);
         }
 
-        public static ControlCommand Random ()
-        {
-            return new ControlCommand (CommandType.Random);
+        public static ControlCommand Random() {
+            return new ControlCommand(CommandType.Random);
         }
 
-        public static ControlCommand SeedRandom ()
-        {
-            return new ControlCommand (CommandType.SeedRandom);
+        public static ControlCommand SeedRandom() {
+            return new ControlCommand(CommandType.SeedRandom);
         }
 
         public static ControlCommand VisitIndex() {
             return new ControlCommand(CommandType.VisitIndex);
         }
-            
+
         public static ControlCommand SequenceShuffleIndex() {
             return new ControlCommand(CommandType.SequenceShuffleIndex);
         }
 
         public static ControlCommand StartThread() {
-            return new ControlCommand (CommandType.StartThread);
+            return new ControlCommand(CommandType.StartThread);
         }
 
         public static ControlCommand Done() {
-            return new ControlCommand (CommandType.Done);
+            return new ControlCommand(CommandType.Done);
         }
 
         public static ControlCommand End() {
-            return new ControlCommand (CommandType.End);
+            return new ControlCommand(CommandType.End);
         }
 
-        public static ControlCommand ListFromInt () {
-            return new ControlCommand (CommandType.ListFromInt);
+        public static ControlCommand ListFromInt() {
+            return new ControlCommand(CommandType.ListFromInt);
         }
 
-        public static ControlCommand ListRange ()
-        {
-            return new ControlCommand (CommandType.ListRange);
+        public static ControlCommand ListRange() {
+            return new ControlCommand(CommandType.ListRange);
         }
 
-        public static ControlCommand ListRandom ()
-        {
-            return new ControlCommand (CommandType.ListRandom);
+        public static ControlCommand ListRandom() {
+            return new ControlCommand(CommandType.ListRandom);
         }
 
-        public override string ToString ()
-        {
+        public override string ToString() {
             return commandType.ToString();
         }
     }
 }
-

@@ -1,13 +1,7 @@
-﻿namespace Ink.Runtime
-{
-    public class Glue : Runtime.Object
-    {
-        public Glue() { }
-
-        public override string ToString ()
-        {
+﻿namespace Ink.Runtime {
+    public class Glue : Object {
+        public override string ToString() {
             return "Glue";
         }
     }
 }
-

@@ -1,20 +1,14 @@
-﻿
-namespace Ink.Parsed
-{
-    public class AuthorWarning : Parsed.Object
-    {
+﻿namespace Ink.Parsed {
+    public class AuthorWarning : Object {
         public string warningMessage;
 
-        public AuthorWarning(string message)
-        {
+        public AuthorWarning(string message) {
             warningMessage = message;
         }
 
-        public override Runtime.Object GenerateRuntimeObject ()
-        {
-            Warning (warningMessage);
+        public override Runtime.Object GenerateRuntimeObject() {
+            Warning(warningMessage);
             return null;
         }
     }
 }
-

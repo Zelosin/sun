@@ -1,6 +1,4 @@
-﻿
-public enum GlobalGameStatus
-{
+﻿public enum GlobalGameStatus {
     IN_GAME,
     IN_HISTORY,
     IN_SETTINGS,

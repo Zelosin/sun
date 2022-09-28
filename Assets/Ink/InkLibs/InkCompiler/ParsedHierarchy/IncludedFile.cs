@@ -1,20 +1,14 @@
-﻿
-namespace Ink.Parsed
-{
-    public class IncludedFile : Parsed.Object
-    {
-        public Parsed.Story includedStory { get; private set; }
-
-        public IncludedFile (Parsed.Story includedStory)
-        {
+﻿namespace Ink.Parsed {
+    public class IncludedFile : Object {
+        public IncludedFile(Story includedStory) {
             this.includedStory = includedStory;
         }
 
-        public override Runtime.Object GenerateRuntimeObject ()
-        {
+        public Story includedStory { get; }
+
+        public override Runtime.Object GenerateRuntimeObject() {
             // Left to the main story to process
             return null;
         }
     }
 }
-

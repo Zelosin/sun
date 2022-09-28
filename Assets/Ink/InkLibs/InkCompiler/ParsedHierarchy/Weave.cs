@@ -1,113 +1,124 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using Ink.Runtime;
 
-namespace Ink.Parsed
-{
+namespace Ink.Parsed {
     // Used by the FlowBase when constructing the weave flow from
     // a flat list of content objects.
-    public class Weave : Parsed.Object
-    {
-        // Containers can be chained as multiple gather points
-        // get created as the same indentation level.
-        // rootContainer is always the first in the chain, while
-        // currentContainer is the latest.
-        public Runtime.Container rootContainer { 
-            get {
-                if (_rootContainer == null) {
-                    GenerateRuntimeObject ();
-                }
+    public class Weave : Object {
+        public delegate void BadTerminationHandler(Object terminatingObj);
 
-                return _rootContainer;
-            }
-        }
-        Runtime.Container currentContainer { get; set; }
+        private int _choiceCount;
+        private Dictionary<string, IWeavePoint> _namedWeavePoints;
 
-		public int baseIndentIndex { get; private set; }
+
+        private Container _rootContainer;
+
+        private int _unnamedGatherCount;
+        private bool addContentToPreviousWeavePoint;
+
+        public List<GatherPointToResolve> gatherPointsToResolve;
+
+        // Used for determining whether the next Gather should auto-enter
+        private bool hasSeenChoiceInSection;
 
         // Loose ends are:
         //  - Choices or Gathers that need to be joined up
         //  - Explicit Divert to gather points (i.e. "->" without a target)
         public List<IWeavePoint> looseEnds;
 
-        public List<GatherPointToResolve> gatherPointsToResolve;
-        public class GatherPointToResolve
-        {
-            public Runtime.Divert divert;
-            public Runtime.Object targetRuntimeObj;
+        // Keep track of previous weave point (Choice or Gather)
+        // at the current indentation level:
+        //  - to add ordinary content to be nested under it
+        //  - to add nested content under it when it's indented
+        //  - to remove it from the list of loose ends when
+        //     - it has indented content since it's no longer a loose end
+        //     - it's a gather and it has a choice added to it
+        private IWeavePoint previousWeavePoint;
+
+        public Weave(List<Object> cont, int indentIndex = -1) {
+            if (indentIndex == -1)
+                baseIndentIndex = DetermineBaseIndentationFromContent(cont);
+            else
+                baseIndentIndex = indentIndex;
+
+            AddContent(cont);
+
+            ConstructWeaveHierarchyFromIndentation();
         }
 
-        public Parsed.Object lastParsedSignificantObject
-        {
+        // Containers can be chained as multiple gather points
+        // get created as the same indentation level.
+        // rootContainer is always the first in the chain, while
+        // currentContainer is the latest.
+        public Container rootContainer {
+            get {
+                if (_rootContainer == null) GenerateRuntimeObject();
+
+                return _rootContainer;
+            }
+        }
+
+        private Container currentContainer { get; set; }
+
+        public int baseIndentIndex { get; }
+
+        public Object lastParsedSignificantObject {
             get {
                 if (content.Count == 0) return null;
 
                 // Don't count extraneous newlines or VAR/CONST declarations,
                 // since they're "empty" statements outside of the main flow.
-                Parsed.Object lastObject = null;
-                for (int i = content.Count - 1; i >= 0; --i) {
-                    lastObject = content [i];
+                Object lastObject = null;
+                for (var i = content.Count - 1; i >= 0; --i) {
+                    lastObject = content[i];
 
-                    var lastText = lastObject as Parsed.Text;
-                    if (lastText && lastText.text == "\n") {
-                        continue;
-                    }
+                    var lastText = lastObject as Text;
+                    if (lastText && lastText.text == "\n") continue;
 
-                    if (IsGlobalDeclaration (lastObject))
+                    if (IsGlobalDeclaration(lastObject))
                         continue;
-                    
+
                     break;
                 }
 
                 var lastWeave = lastObject as Weave;
                 if (lastWeave)
                     lastObject = lastWeave.lastParsedSignificantObject;
-                
+
                 return lastObject;
             }
         }
-                        
-        public Weave(List<Parsed.Object> cont, int indentIndex=-1) 
-        {
-            if (indentIndex == -1) {
-                baseIndentIndex = DetermineBaseIndentationFromContent (cont);
-            } else {
-                baseIndentIndex = indentIndex;
-            }
 
-            AddContent (cont);
+        public void ResolveWeavePointNaming() {
+            var namedWeavePoints = FindAll<IWeavePoint>(w => !string.IsNullOrEmpty(w.name));
 
-            ConstructWeaveHierarchyFromIndentation ();
-        }
-
-        public void ResolveWeavePointNaming ()
-        {
-            var namedWeavePoints = FindAll<IWeavePoint> (w => !string.IsNullOrEmpty (w.name));
-
-            _namedWeavePoints = new Dictionary<string, IWeavePoint> ();
+            _namedWeavePoints = new Dictionary<string, IWeavePoint>();
 
             foreach (var weavePoint in namedWeavePoints) {
-
                 // Check for weave point naming collisions
                 IWeavePoint existingWeavePoint;
-                if (_namedWeavePoints.TryGetValue (weavePoint.name, out existingWeavePoint)) {
+                if (_namedWeavePoints.TryGetValue(weavePoint.name, out existingWeavePoint)) {
                     var typeName = existingWeavePoint is Gather ? "gather" : "choice";
-                    var existingObj = (Parsed.Object)existingWeavePoint;
+                    var existingObj = (Object)existingWeavePoint;
 
-                    Error ("A " + typeName + " with the same label name '" + weavePoint.name + "' already exists in this context on line " + existingObj.debugMetadata.startLineNumber, (Parsed.Object)weavePoint);
+                    Error(
+                        "A " + typeName + " with the same label name '" + weavePoint.name +
+                        "' already exists in this context on line " + existingObj.debugMetadata.startLineNumber,
+                        (Object)weavePoint);
                 }
 
-                _namedWeavePoints [weavePoint.name] = weavePoint;
+                _namedWeavePoints[weavePoint.name] = weavePoint;
             }
         }
 
-        void ConstructWeaveHierarchyFromIndentation()
-        {
+        private void ConstructWeaveHierarchyFromIndentation() {
             // Find nested indentation and convert to a proper object hierarchy
             // (i.e. indented content is replaced with a Weave object that contains
             // that nested content)
-            int contentIdx = 0;
+            var contentIdx = 0;
             while (contentIdx < content.Count) {
-
-                Parsed.Object obj = content [contentIdx];
+                var obj = content[contentIdx];
 
                 // Choice or Gather
                 if (obj is IWeavePoint) {
@@ -116,89 +127,78 @@ namespace Ink.Parsed
 
                     // Inner level indentation - recurse
                     if (weaveIndentIdx > baseIndentIndex) {
-
                         // Step through content until indent jumps out again
-                        int innerWeaveStartIdx = contentIdx;
+                        var innerWeaveStartIdx = contentIdx;
                         while (contentIdx < content.Count) {
-                            var innerWeaveObj = content [contentIdx] as IWeavePoint;
+                            var innerWeaveObj = content[contentIdx] as IWeavePoint;
                             if (innerWeaveObj != null) {
                                 var innerIndentIdx = innerWeaveObj.indentationDepth - 1;
-                                if (innerIndentIdx <= baseIndentIndex) {
-                                    break;
-                                }
+                                if (innerIndentIdx <= baseIndentIndex) break;
                             }
 
                             contentIdx++;
                         }
 
-                        int weaveContentCount = contentIdx - innerWeaveStartIdx;
+                        var weaveContentCount = contentIdx - innerWeaveStartIdx;
 
-                        var weaveContent = content.GetRange (innerWeaveStartIdx, weaveContentCount);
-                        content.RemoveRange (innerWeaveStartIdx, weaveContentCount);
+                        var weaveContent = content.GetRange(innerWeaveStartIdx, weaveContentCount);
+                        content.RemoveRange(innerWeaveStartIdx, weaveContentCount);
 
-                        var weave = new Weave (weaveContent, weaveIndentIdx);
-                        InsertContent (innerWeaveStartIdx, weave);
+                        var weave = new Weave(weaveContent, weaveIndentIdx);
+                        InsertContent(innerWeaveStartIdx, weave);
 
                         // Continue iteration from this point
                         contentIdx = innerWeaveStartIdx;
                     }
-
-                } 
+                }
 
                 contentIdx++;
             }
         }
-            
+
         // When the indentation wasn't told to us at construction time using
         // a choice point with a known indentation level, we may be told to
         // determine the indentation level by incrementing from our closest ancestor.
-        public int DetermineBaseIndentationFromContent(List<Parsed.Object> contentList)
-        {
-            foreach (var obj in contentList) {
-                if (obj is IWeavePoint) {
+        public int DetermineBaseIndentationFromContent(List<Object> contentList) {
+            foreach (var obj in contentList)
+                if (obj is IWeavePoint)
                     return ((IWeavePoint)obj).indentationDepth - 1;
-                }
-            }
 
             // No weave points, so it doesn't matter
             return 0;
         }
 
-        public override Runtime.Object GenerateRuntimeObject ()
-        {
-            _rootContainer = currentContainer = new Runtime.Container();
-            looseEnds = new List<IWeavePoint> ();
+        public override Runtime.Object GenerateRuntimeObject() {
+            _rootContainer = currentContainer = new Container();
+            looseEnds = new List<IWeavePoint>();
 
-            gatherPointsToResolve = new List<GatherPointToResolve> ();
+            gatherPointsToResolve = new List<GatherPointToResolve>();
 
             // Iterate through content for the block at this level of indentation
             //  - Normal content is nested under Choices and Gathers
             //  - Blocks that are further indented cause recursion
             //  - Keep track of loose ends so that they can be diverted to Gathers
-            foreach(var obj in content) {
-
+            foreach (var obj in content)
                 // Choice or Gather
                 if (obj is IWeavePoint) {
-                    AddRuntimeForWeavePoint ((IWeavePoint)obj);
-                } 
+                    AddRuntimeForWeavePoint((IWeavePoint)obj);
+                }
 
                 // Non-weave point
                 else {
-
                     // Nested weave
                     if (obj is Weave) {
                         var weave = (Weave)obj;
-                        AddRuntimeForNestedWeave (weave);
-                        gatherPointsToResolve.AddRange (weave.gatherPointsToResolve);
+                        AddRuntimeForNestedWeave(weave);
+                        gatherPointsToResolve.AddRange(weave.gatherPointsToResolve);
                     }
 
                     // Other object
                     // May be complex object that contains statements - e.g. a multi-line conditional
                     else {
-                        AddGeneralRuntimeContent (obj.runtimeObject);
+                        AddGeneralRuntimeContent(obj.runtimeObject);
                     }
                 }
-            }
 
             // Pass any loose ends up the hierarhcy
             PassLooseEndsToAncestors();
@@ -209,12 +209,11 @@ namespace Ink.Parsed
         // Found gather point:
         //  - gather any loose ends
         //  - set the gather as the main container to dump new content in
-        void AddRuntimeForGather(Gather gather)
-        {
+        private void AddRuntimeForGather(Gather gather) {
             // Determine whether this Gather should be auto-entered:
             //  - It is auto-entered if there were no choices in the last section
             //  - A section is "since the previous gather" - so reset now
-            bool autoEnter = !hasSeenChoiceInSection;
+            var autoEnter = !hasSeenChoiceInSection;
             hasSeenChoiceInSection = false;
 
             var gatherContainer = gather.runtimeContainer;
@@ -224,79 +223,73 @@ namespace Ink.Parsed
                 gatherContainer.name = "g-" + _unnamedGatherCount;
                 _unnamedGatherCount++;
             }
-                
+
             // Auto-enter: include in main content
-            if (autoEnter) {
-                currentContainer.AddContent (gatherContainer);
-            } 
+            if (autoEnter)
+                currentContainer.AddContent(gatherContainer);
 
             // Don't auto-enter:
             // Add this gather to the main content, but only accessible
             // by name so that it isn't stepped into automatically, but only via
             // a divert from a loose end.
-            else {
-                _rootContainer.AddToNamedContentOnly (gatherContainer);
-            }
+            else
+                _rootContainer.AddToNamedContentOnly(gatherContainer);
 
             // Consume loose ends: divert them to this gather
-            foreach (IWeavePoint looseEndWeavePoint in looseEnds) {
-
-                var looseEnd = (Parsed.Object)looseEndWeavePoint;
+            foreach (var looseEndWeavePoint in looseEnds) {
+                var looseEnd = (Object)looseEndWeavePoint;
 
                 // Skip gather loose ends that are at the same level
                 // since they'll be handled by the auto-enter code below
                 // that only jumps into the gather if (current runtime choices == 0)
                 if (looseEnd is Gather) {
                     var prevGather = (Gather)looseEnd;
-                    if (prevGather.indentationDepth == gather.indentationDepth) {
-                        continue;
-                    }
+                    if (prevGather.indentationDepth == gather.indentationDepth) continue;
                 }
 
                 Runtime.Divert divert = null;
 
-                if (looseEnd is Parsed.Divert) {
-                    divert = (Runtime.Divert) looseEnd.runtimeObject;
-                } else {
-                    divert = new Runtime.Divert ();
-                    var looseWeavePoint = looseEnd as IWeavePoint;
-                    looseWeavePoint.runtimeContainer.AddContent (divert);
+                if (looseEnd is Divert) {
+                    divert = (Runtime.Divert)looseEnd.runtimeObject;
                 }
-                   
+                else {
+                    divert = new Runtime.Divert();
+                    var looseWeavePoint = looseEnd as IWeavePoint;
+                    looseWeavePoint.runtimeContainer.AddContent(divert);
+                }
+
                 // Pass back knowledge of this loose end being diverted
                 // to the FlowBase so that it can maintain a list of them,
                 // and resolve the divert references later
-                gatherPointsToResolve.Add (new GatherPointToResolve{ divert = divert, targetRuntimeObj = gatherContainer });
+                gatherPointsToResolve.Add(new GatherPointToResolve
+                    { divert = divert, targetRuntimeObj = gatherContainer });
             }
-            looseEnds.Clear ();
+
+            looseEnds.Clear();
 
             // Replace the current container itself
             currentContainer = gatherContainer;
         }
 
-        void AddRuntimeForWeavePoint(IWeavePoint weavePoint)
-        {
+        private void AddRuntimeForWeavePoint(IWeavePoint weavePoint) {
             // Current level Gather
             if (weavePoint is Gather) {
-                AddRuntimeForGather ((Gather)weavePoint);
-            } 
+                AddRuntimeForGather((Gather)weavePoint);
+            }
 
             // Current level choice
             else if (weavePoint is Choice) {
-
                 // Gathers that contain choices are no longer loose ends
                 // (same as when weave points get nested content)
-                if (previousWeavePoint is Gather) {
-                    looseEnds.Remove (previousWeavePoint);
-                }
+                if (previousWeavePoint is Gather) looseEnds.Remove(previousWeavePoint);
 
                 // Add choice point content
                 var choice = (Choice)weavePoint;
-                currentContainer.AddContent (choice.runtimeObject);
+                currentContainer.AddContent(choice.runtimeObject);
 
                 // Add choice's inner content to self
                 choice.innerContentContainer.name = "c-" + _choiceCount;
-                currentContainer.AddToNamedContentOnly (choice.innerContentContainer);
+                currentContainer.AddToNamedContentOnly(choice.innerContentContainer);
                 _choiceCount++;
 
                 hasSeenChoiceInSection = true;
@@ -304,51 +297,46 @@ namespace Ink.Parsed
 
             // Keep track of loose ends
             addContentToPreviousWeavePoint = false; // default
-            if (WeavePointHasLooseEnd (weavePoint)) {
-                looseEnds.Add (weavePoint);
+            if (WeavePointHasLooseEnd(weavePoint)) {
+                looseEnds.Add(weavePoint);
 
 
                 var looseChoice = weavePoint as Choice;
-                if (looseChoice) {
-                    addContentToPreviousWeavePoint = true;
-                }
+                if (looseChoice) addContentToPreviousWeavePoint = true;
             }
+
             previousWeavePoint = weavePoint;
         }
 
         // Add nested block at a greater indentation level
-        public void AddRuntimeForNestedWeave(Weave nestedResult)
-        {
+        public void AddRuntimeForNestedWeave(Weave nestedResult) {
             // Add this inner block to current container
             // (i.e. within the main container, or within the last defined Choice/Gather)
-            AddGeneralRuntimeContent (nestedResult.rootContainer);
+            AddGeneralRuntimeContent(nestedResult.rootContainer);
 
             // Now there's a deeper indentation level, the previous weave point doesn't
             // count as a loose end (since it will have content to go to)
             if (previousWeavePoint != null) {
-                looseEnds.Remove (previousWeavePoint);
+                looseEnds.Remove(previousWeavePoint);
                 addContentToPreviousWeavePoint = false;
             }
         }
 
         // Normal content gets added into the latest Choice or Gather by default,
         // unless there hasn't been one yet.
-        void AddGeneralRuntimeContent(Runtime.Object content)
-        {
+        private void AddGeneralRuntimeContent(Runtime.Object content) {
             // Content is allowed to evaluate runtimeObject to null
             // (e.g. AuthorWarning, which doesn't make it into the runtime)
             if (content == null)
                 return;
-            
-            if (addContentToPreviousWeavePoint) {
-                previousWeavePoint.runtimeContainer.AddContent (content);
-            } else {
-                currentContainer.AddContent (content);
-            }
+
+            if (addContentToPreviousWeavePoint)
+                previousWeavePoint.runtimeContainer.AddContent(content);
+            else
+                currentContainer.AddContent(content);
         }
 
-        void PassLooseEndsToAncestors()
-        {
+        private void PassLooseEndsToAncestors() {
             if (looseEnds.Count == 0) return;
 
             // Search for Weave ancestor to pass loose ends to for gathering.
@@ -379,14 +367,11 @@ namespace Ink.Parsed
             Weave closestOuterWeaveAncestor = null;
 
             // Find inner and outer ancestor weaves as defined above.
-            bool nested = false;
-            for (var ancestor = this.parent; ancestor != null; ancestor = ancestor.parent)
-            {
-
+            var nested = false;
+            for (var ancestor = parent; ancestor != null; ancestor = ancestor.parent) {
                 // Found ancestor?
                 var weaveAncestor = ancestor as Weave;
-                if (weaveAncestor != null)
-                {
+                if (weaveAncestor != null) {
                     if (!nested && closestInnerWeaveAncestor == null)
                         closestInnerWeaveAncestor = weaveAncestor;
 
@@ -406,24 +391,24 @@ namespace Ink.Parsed
                 return;
 
             // Follow loose end passing logic as defined above
-            for (int i = looseEnds.Count - 1; i >= 0; i--) {
+            for (var i = looseEnds.Count - 1; i >= 0; i--) {
                 var looseEnd = looseEnds[i];
 
-                bool received = false;
+                var received = false;
 
                 // This weave is nested within a conditional or sequence:
                 //  - choices can only be passed up to direct ancestor ("inner") weaves
                 //  - gathers can be passed up to either, but favour the closer (inner) weave
                 //    if there is one
-                if(nested) {
-                    if( looseEnd is Choice && closestInnerWeaveAncestor != null) {
+                if (nested) {
+                    if (looseEnd is Choice && closestInnerWeaveAncestor != null) {
                         closestInnerWeaveAncestor.ReceiveLooseEnd(looseEnd);
                         received = true;
                     }
 
-                    else if( !(looseEnd is Choice) ) {
+                    else if (!(looseEnd is Choice)) {
                         var receivingWeave = closestInnerWeaveAncestor ?? closestOuterWeaveAncestor;
-                        if(receivingWeave != null) {
+                        if (receivingWeave != null) {
                             receivingWeave.ReceiveLooseEnd(looseEnd);
                             received = true;
                         }
@@ -436,50 +421,41 @@ namespace Ink.Parsed
                     received = true;
                 }
 
-                if(received) looseEnds.RemoveAt(i);
+                if (received) looseEnds.RemoveAt(i);
             }
         }
 
-        void ReceiveLooseEnd(IWeavePoint childWeaveLooseEnd)
-        {
+        private void ReceiveLooseEnd(IWeavePoint childWeaveLooseEnd) {
             looseEnds.Add(childWeaveLooseEnd);
         }
 
-        public override void ResolveReferences(Story context)
-        {
-            base.ResolveReferences (context);
+        public override void ResolveReferences(Story context) {
+            base.ResolveReferences(context);
 
             // Check that choices nested within conditionals and sequences are terminated
-            if( looseEnds != null && looseEnds.Count > 0 ) {
+            if (looseEnds != null && looseEnds.Count > 0) {
                 var isNestedWeave = false;
-                for (var ancestor = this.parent; ancestor != null; ancestor = ancestor.parent)
-                {
-                    if (ancestor is Sequence || ancestor is Conditional)
-                    {
+                for (var ancestor = parent; ancestor != null; ancestor = ancestor.parent)
+                    if (ancestor is Sequence || ancestor is Conditional) {
                         isNestedWeave = true;
                         break;
                     }
-                }
-                if (isNestedWeave)
-                {
-                    ValidateTermination(BadNestedTerminationHandler);
-                }
+
+                if (isNestedWeave) ValidateTermination(BadNestedTerminationHandler);
             }
 
-            foreach(var gatherPoint in gatherPointsToResolve) {
+            foreach (var gatherPoint in gatherPointsToResolve)
                 gatherPoint.divert.targetPath = gatherPoint.targetRuntimeObj.path;
-            }
-                
-            CheckForWeavePointNamingCollisions ();
+
+            CheckForWeavePointNamingCollisions();
         }
 
-        public IWeavePoint WeavePointNamed(string name)
-        {
+        public IWeavePoint WeavePointNamed(string name) {
             if (_namedWeavePoints == null)
                 return null;
 
             IWeavePoint weavePointResult = null;
-            if (_namedWeavePoints.TryGetValue (name, out weavePointResult))
+            if (_namedWeavePoints.TryGetValue(name, out weavePointResult))
                 return weavePointResult;
 
             return null;
@@ -487,13 +463,11 @@ namespace Ink.Parsed
 
         // Global VARs and CONSTs are treated as "outside of the flow"
         // when iterating over content that follows loose ends
-        bool IsGlobalDeclaration (Parsed.Object obj)
-        {
-
+        private bool IsGlobalDeclaration(Object obj) {
             var varAss = obj as VariableAssignment;
             if (varAss && varAss.isGlobalDeclaration && varAss.isDeclaration)
                 return true;
-            
+
             var constDecl = obj as ConstantDeclaration;
             if (constDecl)
                 return true;
@@ -503,37 +477,32 @@ namespace Ink.Parsed
 
         // While analysing final loose ends, we look to see whether there
         // are any diverts etc which choices etc divert from
-        IEnumerable<Parsed.Object> ContentThatFollowsWeavePoint (IWeavePoint weavePoint)
-        {
-            var obj = (Parsed.Object)weavePoint;
+        private IEnumerable<Object> ContentThatFollowsWeavePoint(IWeavePoint weavePoint) {
+            var obj = (Object)weavePoint;
 
             // Inner content first (e.g. for a choice)
-            if (obj.content != null) {
+            if (obj.content != null)
                 foreach (var contentObj in obj.content) {
-
                     // Global VARs and CONSTs are treated as "outside of the flow"
-                    if (IsGlobalDeclaration (contentObj)) continue;
+                    if (IsGlobalDeclaration(contentObj)) continue;
 
                     yield return contentObj;
                 }
-            }
 
 
             var parentWeave = obj.parent as Weave;
-            if (parentWeave == null) {
-                throw new System.Exception ("Expected weave point parent to be weave?");
-            }
+            if (parentWeave == null) throw new Exception("Expected weave point parent to be weave?");
 
-            var weavePointIdx = parentWeave.content.IndexOf (obj);
+            var weavePointIdx = parentWeave.content.IndexOf(obj);
 
-            for (int i = weavePointIdx+1; i < parentWeave.content.Count; i++) {
-                var laterObj = parentWeave.content [i];
+            for (var i = weavePointIdx + 1; i < parentWeave.content.Count; i++) {
+                var laterObj = parentWeave.content[i];
 
                 // Global VARs and CONSTs are treated as "outside of the flow"
-                if (IsGlobalDeclaration (laterObj)) continue;
+                if (IsGlobalDeclaration(laterObj)) continue;
 
                 // End of the current flow
-                if (laterObj is IWeavePoint) 
+                if (laterObj is IWeavePoint)
                     break;
 
                 // Other weaves will be have their own loose ends
@@ -544,14 +513,10 @@ namespace Ink.Parsed
             }
         }
 
-        public delegate void BadTerminationHandler (Parsed.Object terminatingObj);
-        public void ValidateTermination (BadTerminationHandler badTerminationHandler)
-        {
+        public void ValidateTermination(BadTerminationHandler badTerminationHandler) {
             // Don't worry if the last object in the flow is a "TODO",
             // even if there are other loose ends in other places
-            if (lastParsedSignificantObject is AuthorWarning) {
-                return;
-            }
+            if (lastParsedSignificantObject is AuthorWarning) return;
 
             // By now, any sub-weaves will have passed loose ends up to the root weave (this).
             // So there are 2 possible situations:
@@ -562,39 +527,36 @@ namespace Ink.Parsed
             //  - This weave is just a list of content with no actual weave points,
             //    so we just need to check that the list of content terminates.
 
-            bool hasLooseEnds = looseEnds != null && looseEnds.Count > 0;
+            var hasLooseEnds = looseEnds != null && looseEnds.Count > 0;
 
             if (hasLooseEnds) {
                 foreach (var looseEnd in looseEnds) {
-                    var looseEndFlow = ContentThatFollowsWeavePoint (looseEnd);
-                    ValidateFlowOfObjectsTerminates (looseEndFlow, (Parsed.Object)looseEnd, badTerminationHandler);
+                    var looseEndFlow = ContentThatFollowsWeavePoint(looseEnd);
+                    ValidateFlowOfObjectsTerminates(looseEndFlow, (Object)looseEnd, badTerminationHandler);
                 }
             }
 
             // No loose ends... is there any inner weaving at all?
             // If not, make sure the single content stream is terminated correctly
             else {
-
                 // If there's any actual weaving, assume that content is 
                 // terminated correctly since we would've had a loose end otherwise
-                foreach (var obj in content) {
-                    if (obj is IWeavePoint) return;
-                }
+                foreach (var obj in content)
+                    if (obj is IWeavePoint)
+                        return;
 
                 // Straight linear flow? Check it terminates
-                ValidateFlowOfObjectsTerminates (content, this, badTerminationHandler);
+                ValidateFlowOfObjectsTerminates(content, this, badTerminationHandler);
             }
         }
 
-        void BadNestedTerminationHandler(Parsed.Object terminatingObj)
-        {
+        private void BadNestedTerminationHandler(Object terminatingObj) {
             Conditional conditional = null;
-            for (var ancestor = terminatingObj.parent; ancestor != null; ancestor = ancestor.parent) {
-                if( ancestor is Sequence || ancestor is Conditional ) {
+            for (var ancestor = terminatingObj.parent; ancestor != null; ancestor = ancestor.parent)
+                if (ancestor is Sequence || ancestor is Conditional) {
                     conditional = ancestor as Conditional;
                     break;
                 }
-            }
 
             var errorMsg = "Choices nested in conditionals or sequences need to explicitly divert afterwards.";
 
@@ -604,26 +566,24 @@ namespace Ink.Parsed
             // }
             if (conditional != null) {
                 var numChoices = conditional.FindAll<Choice>().Count;
-                if( numChoices == 1 ) {
-                    errorMsg = "Choices with conditions should be written: '* {condition} choice'. Otherwise, "+ errorMsg.ToLower();
-                }
+                if (numChoices == 1)
+                    errorMsg = "Choices with conditions should be written: '* {condition} choice'. Otherwise, " +
+                               errorMsg.ToLower();
             }
 
             Error(errorMsg, terminatingObj);
         }
 
-        void ValidateFlowOfObjectsTerminates (IEnumerable<Parsed.Object> objFlow, Parsed.Object defaultObj, BadTerminationHandler badTerminationHandler)
-        {
-            bool terminated = false;
-            Parsed.Object terminatingObj = defaultObj;
+        private void ValidateFlowOfObjectsTerminates(IEnumerable<Object> objFlow, Object defaultObj,
+            BadTerminationHandler badTerminationHandler) {
+            var terminated = false;
+            var terminatingObj = defaultObj;
             foreach (var flowObj in objFlow) {
+                var divert = flowObj.Find<Divert>(d =>
+                    !d.isThread && !d.isTunnel && !d.isFunctionCall && !(d.parent is DivertTarget));
+                if (divert != null) terminated = true;
 
-                var divert = flowObj.Find<Divert> (d => !d.isThread && !d.isTunnel && !d.isFunctionCall && !(d.parent is DivertTarget));
-                if (divert != null) {
-                    terminated = true;
-                }
-
-                if (flowObj.Find<TunnelOnwards> () != null) {
+                if (flowObj.Find<TunnelOnwards>() != null) {
                     terminated = true;
                     break;
                 }
@@ -633,19 +593,15 @@ namespace Ink.Parsed
 
 
             if (!terminated) {
-
                 // Author has left a note to self here - clearly we don't need
                 // to leave them with another warning since they know what they're doing.
-                if (terminatingObj is AuthorWarning) {
-                    return;
-                }
+                if (terminatingObj is AuthorWarning) return;
 
-                badTerminationHandler (terminatingObj);
+                badTerminationHandler(terminatingObj);
             }
         }
-            
-        bool WeavePointHasLooseEnd(IWeavePoint weavePoint)
-        {
+
+        private bool WeavePointHasLooseEnd(IWeavePoint weavePoint) {
             // No content, must be a loose end.
             if (weavePoint.content == null) return true;
 
@@ -654,10 +610,10 @@ namespace Ink.Parsed
             // Work backwards since we're really interested in the end,
             // although it doesn't actually make a difference!
             // (content after a divert will simply be inaccessible)
-            for (int i = weavePoint.content.Count - 1; i >= 0; --i) {
-                var innerDivert = weavePoint.content [i] as Divert;
+            for (var i = weavePoint.content.Count - 1; i >= 0; --i) {
+                var innerDivert = weavePoint.content[i] as Divert;
                 if (innerDivert) {
-                    bool willReturn = innerDivert.isThread || innerDivert.isTunnel || innerDivert.isFunctionCall;
+                    var willReturn = innerDivert.isThread || innerDivert.isTunnel || innerDivert.isFunctionCall;
                     if (!willReturn) return false;
                 }
             }
@@ -667,16 +623,15 @@ namespace Ink.Parsed
 
         // Enforce rule that weave points must not have the same
         // name as any stitches or knots upwards in the hierarchy
-        void CheckForWeavePointNamingCollisions()
-        {
+        private void CheckForWeavePointNamingCollisions() {
             if (_namedWeavePoints == null)
                 return;
-            
-            var ancestorFlows = new List<FlowBase> ();
-            foreach (var obj in this.ancestry) {
+
+            var ancestorFlows = new List<FlowBase>();
+            foreach (var obj in ancestry) {
                 var flow = obj as FlowBase;
                 if (flow)
-                    ancestorFlows.Add (flow);
+                    ancestorFlows.Add(flow);
                 else
                     break;
             }
@@ -684,47 +639,28 @@ namespace Ink.Parsed
 
             foreach (var namedWeavePointPair in _namedWeavePoints) {
                 var weavePointName = namedWeavePointPair.Key;
-                var weavePoint = (Parsed.Object) namedWeavePointPair.Value;
+                var weavePoint = (Object)namedWeavePointPair.Value;
 
-                foreach(var flow in ancestorFlows) {
-
+                foreach (var flow in ancestorFlows) {
                     // Shallow search
-                    var otherContentWithName = flow.ContentWithNameAtLevel (weavePointName);
+                    var otherContentWithName = flow.ContentWithNameAtLevel(weavePointName);
 
                     if (otherContentWithName && otherContentWithName != weavePoint) {
-                        var errorMsg = string.Format ("{0} '{1}' has the same label name as a {2} (on {3})", 
-                            weavePoint.GetType().Name, 
-                            weavePointName, 
-                            otherContentWithName.GetType().Name, 
+                        var errorMsg = string.Format("{0} '{1}' has the same label name as a {2} (on {3})",
+                            weavePoint.GetType().Name,
+                            weavePointName,
+                            otherContentWithName.GetType().Name,
                             otherContentWithName.debugMetadata);
 
-                        Error(errorMsg, (Parsed.Object) weavePoint);
+                        Error(errorMsg, weavePoint);
                     }
-
                 }
             }
         }
 
-        // Keep track of previous weave point (Choice or Gather)
-        // at the current indentation level:
-        //  - to add ordinary content to be nested under it
-        //  - to add nested content under it when it's indented
-        //  - to remove it from the list of loose ends when
-        //     - it has indented content since it's no longer a loose end
-        //     - it's a gather and it has a choice added to it
-        IWeavePoint previousWeavePoint = null;
-        bool addContentToPreviousWeavePoint = false;
-
-        // Used for determining whether the next Gather should auto-enter
-        bool hasSeenChoiceInSection = false;
-
-        int _unnamedGatherCount;
-
-        int _choiceCount;
-
-
-        Runtime.Container _rootContainer;
-        Dictionary<string, IWeavePoint> _namedWeavePoints;
+        public class GatherPointToResolve {
+            public Runtime.Divert divert;
+            public Runtime.Object targetRuntimeObj;
+        }
     }
 }
-

@@ -1,29 +1,23 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
 using Ink.Runtime;
 using TMPro;
-using Unity.VisualScripting;
 using UnityEngine;
 
-public class ReadController : MonoBehaviour
-{
-    
+public class ReadController : MonoBehaviour {
     [SerializeField] private TextAsset textAsset;
     [SerializeField] private TMP_Text dialogText;
     [SerializeField] private TMP_Text historyText;
     [SerializeField] private NetworkController networkController;
+    private Story dialogStory;
 
     private Fader fader;
     private bool isDialogStarted = false;
     private bool isFadeInInterrapter = false;
 
     private Coroutine speechCoroutine;
-    private Story dialogStory;
 
-    private void Awake()
-    {
-        historyText.text = String.Empty;
+    private void Awake() {
+        historyText.text = string.Empty;
 
         fader = GetComponent<Fader>();
         networkController.parEvent += (sender, arg) => {
@@ -64,8 +58,9 @@ public class ReadController : MonoBehaviour
         if (dialogStory.currentTags.Contains(TagStore.BLOCK_SELF)) GlobalClientStatus.IS_BLOCKED = true;
         if (dialogStory.currentTags.Contains(TagStore.BLOCK_PAR)) networkController.sendMessage(TagStore.BLOCK_PAR);
         if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR)) networkController.sendMessage(TagStore.RELEASE_PAR);
-        if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR_LIM)) networkController.sendMessage(TagStore.RELEASE_PAR_LIM);
-        
+        if (dialogStory.currentTags.Contains(TagStore.RELEASE_PAR_LIM))
+            networkController.sendMessage(TagStore.RELEASE_PAR_LIM);
+
         if (dialogStory.currentTags.Contains(TagStore.WAIT_PAR)) GlobalClientStatus.IS_PAR_CONNECTED = false;
         if (dialogStory.currentTags.Contains(TagStore.DUO)) networkController.sendMessage(TagStore.DUO);
     }
@@ -77,10 +72,12 @@ public class ReadController : MonoBehaviour
     }
 
     public void loadChunkAndUpdateText(bool isForceCall = false) {
-        if (dialogStory.canContinue && (!GlobalClientStatus.IS_BLOCKED && GlobalClientStatus.IS_PAR_CONNECTED && GlobalClientStatus.gameStatus == GlobalGameStatus.IN_GAME || isForceCall)) {
+        if (dialogStory.canContinue &&
+            ((!GlobalClientStatus.IS_BLOCKED && GlobalClientStatus.IS_PAR_CONNECTED &&
+              GlobalClientStatus.gameStatus == GlobalGameStatus.IN_GAME) || isForceCall)) {
             var nextText = dialogStory.Continue();
-            if(!isForceCall) checkTags();
-            dialogText.text = String.Empty;
+            if (!isForceCall) checkTags();
+            dialogText.text = string.Empty;
             historyText.text += nextText + "\n";
             GlobalClientStatus.readStatus = GlobalReadStatus.IN_SPEECH;
             speechCoroutine = StartCoroutine(buildText(nextText, dialogText));
@@ -89,17 +86,17 @@ public class ReadController : MonoBehaviour
             endDialog();
         }
     }
-    
-    private IEnumerator buildText(string text, TMP_Text textComponent){
-        for (int i = 0; i < text.Length; i++){
+
+    private IEnumerator buildText(string text, TMP_Text textComponent) {
+        for (var i = 0; i < text.Length; i++) {
             textComponent.text = string.Concat(textComponent.text, text[i]);
             yield return new WaitForSeconds(1 - SettingsStore.SPEECH_SPEED / 100);
         }
+
         GlobalClientStatus.readStatus = GlobalReadStatus.RED;
     }
 
     private void endDialog() {
         StartCoroutine(fader.fadeOut(dialogText.color));
     }
-    
 }

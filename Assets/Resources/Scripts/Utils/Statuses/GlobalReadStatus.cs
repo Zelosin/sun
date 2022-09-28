@@ -1,5 +1,4 @@
-﻿public enum GlobalReadStatus
-{
+﻿public enum GlobalReadStatus {
     IN_SPEECH,
     RED
 }
