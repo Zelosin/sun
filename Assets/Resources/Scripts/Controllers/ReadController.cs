@@ -8,6 +8,8 @@ public class ReadController : MonoBehaviour {
     [SerializeField] private TMP_Text dialogText;
     [SerializeField] private TMP_Text historyText;
     [SerializeField] private NetworkController networkController;
+    [SerializeField] private AudioController audioController;
+    
     private Story dialogStory;
 
     private Fader fader;

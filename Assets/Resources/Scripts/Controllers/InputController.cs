@@ -4,6 +4,7 @@ public class InputController : MonoBehaviour {
     [SerializeField] private GameObject historyView;
     [SerializeField] private GameObject settingsView;
     [SerializeField] private ReadController readController;
+    [SerializeField] private AudioController audioController;
 
     [SerializeField] private RectTransform historyButton;
     [SerializeField] private RectTransform settingsButton;
@@ -29,6 +30,7 @@ public class InputController : MonoBehaviour {
 
                 if (RectTransformUtility.RectangleContainsScreenPoint(settingsButton, Input.mousePosition)) {
                     GlobalClientStatus.gameStatus = GlobalGameStatus.IN_SETTINGS;
+                    audioController.play(SFX.PAPER);
                     settingsView.SetActive(true);
                     return;
                 }
@@ -58,6 +60,7 @@ public class InputController : MonoBehaviour {
             }
             else if (GlobalClientStatus.gameStatus == GlobalGameStatus.IN_GAME) {
                 GlobalClientStatus.gameStatus = GlobalGameStatus.IN_SETTINGS;
+                audioController.play(SFX.PAPER);
                 settingsView.SetActive(true);
             }
         }
